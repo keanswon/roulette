@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build CLI",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        // include src/core/*.cpp when files are added
+        "-c",
+        "g++ -std=c++20 -Wall -Wextra -Wpedantic -O2 apps/cli/main.cpp -Iinclude -o ${workspaceFolder}/roulette_cli"
+      ],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+  "label": "Build OpenGL",
+  "type": "shell",
+  "command": "bash",
+  "args": [
+    "-c",
+    "clang++ -std=c++20 -O2 -Wall -Wextra -Wpedantic apps/opengl/main.cpp opengl/src/VAO.cpp opengl/src/VBO.cpp opengl/src/EBO.cpp opengl/src/shaderClass.cpp opengl/src/glad.c opengl/libraries/imgui/imgui.cpp opengl/libraries/imgui/imgui_draw.cpp opengl/libraries/imgui/imgui_tables.cpp opengl/libraries/imgui/imgui_widgets.cpp opengl/libraries/imgui/backends/imgui_impl_glfw.cpp opengl/libraries/imgui/backends/imgui_impl_opengl3.cpp -Iinclude -Iopengl/include -Iopengl/libraries/include -Iopengl/libraries/imgui -Iopengl/libraries/imgui/backends -DIMGUI_IMPL_OPENGL_LOADER_GLAD -DGL_SILENCE_DEPRECATION -Lopengl/libraries/lib -lglfw3 -framework Cocoa -framework IOKit -framework CoreVideo -framework OpenGL -o ${workspaceFolder}/roulette_gl"
+  ],
+  "problemMatcher": ["$gcc"],
+  "group": "build"
+},
+    {
+      "label": "Build All",
+      "dependsOn": ["Build CLI", "Build OpenGL"],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Run CLI",
+      "type": "shell",
+      "command": "bash",
+      "args": ["-c", "${workspaceFolder}/roulette_cli"]
+    },
+    {
+      "label": "Run OpenGL",
+      "type": "shell",
+      "command": "bash",
+      "args": ["-c", "${workspaceFolder}/roulette_gl"]
+    },
+    {
+      "label": "Clean Binaries",
+      "type": "shell",
+      "command": "bash",
+      "args": ["-c", "rm -f ${workspaceFolder}/roulette_cli ${workspaceFolder}/roulette_gl"]
+    }
+  ]
+}
