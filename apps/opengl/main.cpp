@@ -6,6 +6,7 @@
 #include <string>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -50,6 +51,13 @@ static float bOmega = 0.0f;
 static float bAlpha = 0.0f;     
 static bool  bSpinning = false;
 
+static bool  bLocked = false;     
+static float tBall   = 0.0f;      
+static float tSinceSpin = 0.0f;   
+static int   winIdx = -1;
+static float lockedSector = 0.0f;         
+
+
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -68,6 +76,9 @@ static std::vector<std::string> makeLabels(bool american) {
     }
     return L;
 }
+
+static inline float wrap(float a){ while(a<0) a+=TWO_PI; while(a>=TWO_PI) a-=TWO_PI; return a; }
+static inline float sector_center(int idx, int N){ return (idx + 0.5f) * (TWO_PI / N); }
 
 
 
@@ -429,16 +440,44 @@ int main() {
 
         ImGui::SetCursorPosY(16);
         if (ImGui::Button("Spin Wheel", ImVec2(160, 32)) && !gSpinning) {
+            const int N = (int)labels.size();
+            winIdx = (float)(rand() % N);
+            
             // kick off a spin
             gSpinning = true;
             gAngle = fmodf(gAngle, TWO_PI);
             gOmega = 10.0f;
             gAlpha = -2.0f;
-            
+            const float t_stop = gOmega / -gAlpha;
+
+            tBall = 0.65f * t_stop;                  // choose 60–75% of stop time
+            tSinceSpin = 0.0f;
+            bLocked = false;
+
+            const float theta_w_tBall = gAngle + gOmega*tBall + 0.5f*gAlpha*tBall*tBall;
+            const float theta_sector  = sector_center(winIdx, N);
+            const float theta_meet = wrap(theta_w_tBall + theta_sector);
+
+            const float theta0 = wrap(bAngle);
+            float dtheta = theta_meet - theta0;
+            dtheta = atan2f(sinf(dtheta), cosf(dtheta));
+            const int laps = 3 + (std::rand() % 3); // 3..5 laps
+            dtheta -= TWO_PI * laps;
+
             bSpinning = true;
-            bAngle = fmodf(bAngle, TWO_PI);
-            bOmega = -18.0f;
-            bAlpha = 5.0f;
+            bLocked   = false;
+            bAngle    = theta0;
+            bOmega    = 2.0f * dtheta / tBall;      
+            bAlpha    = -bOmega / tBall;
+
+            std::cout << "winIdx=" << winIdx << " label=" << labels[winIdx] << "\n";
+
+            // const float t_stop = -gOmega / gAlpha;
+            // const float θ_w_stop = gAngle + gOmega * t_stop + 0.5f * gAlpha * t_stop * t_stop;
+            // const float θ_sector = (winning_index + 0.5f) * (TWO_PI / N);
+
+            // const int laps = 3 + (rand() % 3);  // 3 to 5 laps
+            // const float θ_target = fmodf((θ_w_stop + θ_sector), TWO_PI) + center_offset + laps * TWO_PI;
         }
         ImGui::SameLine();
         ImGui::Text("Angle: %.2f rad   Speed: %.2f rad/s", gAngle, gOmega);
@@ -476,29 +515,46 @@ int main() {
         double dt = now - gLastT;
         gLastT = now;
 
+        if (gSpinning || bSpinning || !bLocked) tSinceSpin += (float)dt;
+
         if (gSpinning) {
             gOmega += gAlpha * (float)dt;
             if (gOmega <= 0.0f) { gOmega = 0.0f; gSpinning = false; }
             gAngle += gOmega * (float)dt;
-            if (gAngle > TWO_PI) gAngle = fmodf(gAngle, TWO_PI);
+            gAngle = wrap(gAngle);
         }
 
         if (bSpinning) {
-            float sign = (bOmega >= 0.0f) ? 1.0f : -1.0f;
-            bOmega -= sign * bAlpha * (float)dt;          // reduce magnitude
-            if ((sign > 0.0f && bOmega < 0.0f) || (sign < 0.0f && bOmega > 0.0f)) {
-                bOmega = 0.0f; bSpinning = false;
-            }
+            bOmega += bAlpha * (float)dt;
             bAngle += bOmega * (float)dt;
-            if (bAngle >  TWO_PI) bAngle -= TWO_PI;
-            if (bAngle < -TWO_PI) bAngle += TWO_PI;
+            bAngle = wrap(bAngle);
+
+            if (tSinceSpin >= tBall || ((bOmega >= 0.0f && bAlpha > 0.0f) || (bOmega <= 0.0f && bAlpha < 0.0f))) {
+                bSpinning = false;
+                bLocked   = true;
+                bOmega    = 0.0f;
+
+                int N = (int)labels.size();
+                lockedSector = sector_center(winIdx, N);
+                bAngle = wrap(gAngle + lockedSector);
+            }
         }
 
-        const float rBall = rOut * 1.05f;         
+        float rBall = rOut * 1.05f;
+        if (bLocked) {
+            static float drop = rOut * 1.0f; // initial drop height
+            bAngle = wrap(gAngle + lockedSector);      // follow the wheel
+            float fdt = static_cast<float>(dt);
+            drop = std::max(rOut * 0.85f, drop - .025f * fdt);
+            rBall = drop;
+        } else {
+            rBall = rOut*1.05f;
+        }
         const float bx = rBall * cosf(bAngle);
         const float by = rBall * sinf(bAngle);
         BuildBallMeshAt(bx, by);
 
+        glUniform1f(glGetUniformLocation(wheelShader.ID, "uAngle"), 0.0f);
         DrawBall();
 
         ImGui::Render();
