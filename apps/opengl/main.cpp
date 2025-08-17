@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <random>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -441,7 +442,9 @@ int main() {
         ImGui::SetCursorPosY(16);
         if (ImGui::Button("Spin Wheel", ImVec2(160, 32)) && !gSpinning) {
             const int N = (int)labels.size();
-            winIdx = (float)(rand() % N);
+            std::mt19937 rng(std::random_device{}());   // good engine
+            std::uniform_int_distribution<int> dist(0, N-1);
+            winIdx = dist(rng);
             
             // kick off a spin
             gSpinning = true;
@@ -541,15 +544,52 @@ int main() {
         }
 
         float rBall = rOut * 1.05f;
+
+        static float dropT = 0.0f;        
+        static bool wasLocked = false;    
+        static float dropVelocity = 0.0f; 
+
+        // Physics constants
+        const float gravity = 6.78f;
+        const float drop_start = rOut * 1.05f; 
+        const float final_height = rOut * 0.85f; 
+        const float max_drop_distance = drop_start - final_height;
+
+        
+        const float scaled_gravity = gravity * 0.1f; 
+
         if (bLocked) {
-            static float drop = rOut * 1.0f; // initial drop height
-            bAngle = wrap(gAngle + lockedSector);      // follow the wheel
+            if (!wasLocked) {
+                dropT = 0.0f;
+                dropVelocity = 0.0f; 
+            }
+            
+            bAngle = wrap(gAngle + lockedSector);
             float fdt = static_cast<float>(dt);
-            drop = std::max(rOut * 0.85f, drop - .025f * fdt);
-            rBall = drop;
+            dropVelocity += scaled_gravity * fdt;
+            
+            float drop_distance_delta = dropVelocity * fdt;
+            dropT += fdt;
+            
+            float total_drop = 0.5f * scaled_gravity * dropT * dropT;
+            total_drop = std::min(total_drop, max_drop_distance);
+            
+            rBall = drop_start - total_drop;
+            
+            rBall = std::max(rBall, final_height);
+            
+            if (rBall <= final_height && dropVelocity > 0) {
+                dropVelocity *= -0.15f;
+                rBall = final_height;
+            }
+            
         } else {
-            rBall = rOut*1.05f;
+            rBall = rOut * 1.05f;
+            dropT = 0.0f;
+            dropVelocity = 0.0f;
         }
+
+        wasLocked = bLocked;
         const float bx = rBall * cosf(bAngle);
         const float by = rBall * sinf(bAngle);
         BuildBallMeshAt(bx, by);
