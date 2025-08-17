@@ -42,6 +42,7 @@ constexpr bool is_red_number(int n) {
     }
 }
 
+// assign attributes based on number using bitmasking
 constexpr uint16_t build_attrs(int n, bool is00) {
     if (n == 0 || is00) return GREEN;
     uint16_t a = 0;

@@ -44,6 +44,11 @@ static float gAlpha = 0.0f;      // angular decel
 static double gLastT = 0.0;      // last frame time
 static bool gSpinning = false;
 
+// variables for ball
+static float bAngle = 0.0f;     
+static float bOmega = 0.0f;     
+static float bAlpha = 0.0f;     
+static bool  bSpinning = false;
 
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -302,6 +307,62 @@ static void DrawText() {
     glDisable(GL_BLEND);
 }
 
+/* ── Ball ────────────────────────────────────────────────────────────────── */
+
+VAO*  ballVAO = nullptr;
+VBO*  ballVBO = nullptr;
+EBO*  ballEBO = nullptr;
+GLsizei ballIndexCount = 0;
+
+static void BuildBallMeshAt(float cx, float cy, float rr = 0.012f, int segs = 96) {
+    std::vector<float> v((segs + 2) * 6);       // pos(3) + color(3)
+    std::vector<unsigned> idx(segs + 2);
+
+    // center
+    v[0]=cx; v[1]=cy; v[2]=0.0025f;  // slightly above text
+    v[3]=v[4]=v[5]=1.0f;             // white
+
+    for (int i = 0; i < segs; ++i) {
+        float t = (TWO_PI * i) / segs;
+        int j   = (i + 1) * 6;
+        v[j+0] = cx + rr * cosf(t);
+        v[j+1] = cy + rr * sinf(t);
+        v[j+2] = 0.0025f;
+        v[j+3] = 0.95f; v[j+4] = 0.95f; v[j+5] = 0.95f; // slightly grey for soft look
+    }
+
+    // close fan
+    int j = (segs + 1) * 6;
+    v[j+0] = v[6]; v[j+1] = v[7]; v[j+2] = v[8];
+    v[j+3] = 0.95f; v[j+4] = 0.95f; v[j+5] = 0.95f;
+
+    idx[0] = 0;
+    for (int i = 0; i <= segs; ++i) idx[i + 1] = i + 1;
+
+    // (re)upload
+    delete ballVAO; delete ballVBO; delete ballEBO;
+    ballVAO = new VAO();
+    ballVBO = new VBO(v.data(), v.size() * sizeof(float));
+    ballEBO = new EBO(idx.data(), idx.size() * sizeof(unsigned));
+    ballIndexCount = (GLsizei)idx.size();
+
+    ballVAO->Bind(); ballVBO->Bind(); ballEBO->Bind();
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)(3*sizeof(float)));
+    glEnableVertexAttribArray(1);
+    ballVAO->Unbind(); ballVBO->Unbind(); ballEBO->Unbind();
+}
+
+static void DrawBall() {
+    if (!ballVAO) return;
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    ballVAO->Bind();
+    glDrawElements(GL_TRIANGLE_FAN, ballIndexCount, GL_UNSIGNED_INT, 0);
+    ballVAO->Unbind();
+}
+
 
 
 /* ── App ─────────────────────────────────────────────────────────────────── */
@@ -349,7 +410,6 @@ int main() {
     bool tPrev = false;
 
 
-
     while (!glfwWindowShouldClose(window)) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -372,8 +432,13 @@ int main() {
             // kick off a spin
             gSpinning = true;
             gAngle = fmodf(gAngle, TWO_PI);
-            gOmega = 10.0f;      // initial speed (rad/s) – tweak to taste
-            gAlpha = -2.0f;      // constant decel (rad/s^2)
+            gOmega = 10.0f;
+            gAlpha = -2.0f;
+            
+            bSpinning = true;
+            bAngle = fmodf(bAngle, TWO_PI);
+            bOmega = -18.0f;
+            bAlpha = 5.0f;
         }
         ImGui::SameLine();
         ImGui::Text("Angle: %.2f rad   Speed: %.2f rad/s", gAngle, gOmega);
@@ -385,6 +450,9 @@ int main() {
             labels   = makeLabels(american);
             SetupWheelRing(labels, rIn, rOut);
             BuildTextMesh(labels, rIn, rOut);
+
+            const float rBall = rOut * 0.98f;
+            BuildBallMeshAt(rBall * cosf(bAngle), rBall * sinf(bAngle));
         }
         tPrev = tNow;
 
@@ -414,6 +482,24 @@ int main() {
             gAngle += gOmega * (float)dt;
             if (gAngle > TWO_PI) gAngle = fmodf(gAngle, TWO_PI);
         }
+
+        if (bSpinning) {
+            float sign = (bOmega >= 0.0f) ? 1.0f : -1.0f;
+            bOmega -= sign * bAlpha * (float)dt;          // reduce magnitude
+            if ((sign > 0.0f && bOmega < 0.0f) || (sign < 0.0f && bOmega > 0.0f)) {
+                bOmega = 0.0f; bSpinning = false;
+            }
+            bAngle += bOmega * (float)dt;
+            if (bAngle >  TWO_PI) bAngle -= TWO_PI;
+            if (bAngle < -TWO_PI) bAngle += TWO_PI;
+        }
+
+        const float rBall = rOut * 1.05f;         
+        const float bx = rBall * cosf(bAngle);
+        const float by = rBall * sinf(bAngle);
+        BuildBallMeshAt(bx, by);
+
+        DrawBall();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
